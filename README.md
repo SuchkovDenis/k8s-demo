@@ -33,7 +33,7 @@ cd app
 docker build -t demo-app:1.0 .
 ```
 
-### 2. Демо: Docker с ограничениями (90%+ ошибок)
+### 2. Демо: Docker с ограничениями
 ```bash
 docker run -d --name demo-app -p 8080:8080 --cpus=0.2 --memory=128m demo-app:1.0
 
@@ -44,7 +44,7 @@ cd dashboard && python3 server.py
 docker rm -f demo-app
 ```
 
-### 3. Демо: Kubernetes с автоскейлингом (0% ошибок)
+### 3. Демо: Kubernetes с автоскейлингом
 ```bash
 minikube start
 minikube addons enable metrics-server
