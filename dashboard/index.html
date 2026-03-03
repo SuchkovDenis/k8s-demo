@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>K8s Load Test Dashboard</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0d1117; color: #c9d1d9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; padding: 20px; }
+  h1 { font-size: 24px; margin-bottom: 20px; color: #58a6ff; }
+  h2 { font-size: 14px; text-transform: uppercase; letter-spacing: 1px; color: #8b949e; margin-bottom: 12px; }
+  h2 .badge { font-size: 12px; background: #30363d; color: #58a6ff; padding: 2px 8px; border-radius: 10px; margin-left: 8px; font-weight: 700; }
+
+  .controls { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; padding: 16px; background: #161b22; border-radius: 8px; border: 1px solid #30363d; flex-wrap: wrap; }
+  .controls input[type=text] { background: #0d1117; border: 1px solid #30363d; color: #c9d1d9; padding: 8px 12px; border-radius: 6px; font-size: 14px; width: 280px; }
+  .controls label { font-size: 13px; color: #8b949e; display: flex; align-items: center; gap: 8px; }
+  .controls input[type=range] { width: 120px; accent-color: #58a6ff; }
+  .controls span.val { color: #58a6ff; font-weight: bold; min-width: 30px; }
+  #startBtn { padding: 8px 24px; border: none; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+  #startBtn.stopped { background: #238636; color: #fff; }
+  #startBtn.running { background: #da3633; color: #fff; }
+  #resetBtn { padding: 8px 16px; border: 1px solid #30363d; background: transparent; border-radius: 6px; font-size: 13px; color: #8b949e; cursor: pointer; }
+  #resetBtn:hover { border-color: #58a6ff; color: #58a6ff; }
+  .hint { font-size: 11px; color: #484f58; margin-bottom: 16px; padding: 0 4px; }
+  .hint code { background: #161b22; padding: 2px 6px; border-radius: 4px; color: #8b949e; }
+
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+  @media (max-width: 800px) { .grid { grid-template-columns: 1fr; } }
+  .panel { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; }
+  .panel.full { grid-column: 1 / -1; }
+
+  /* Pods */
+  #pods { display: flex; flex-wrap: wrap; gap: 10px; min-height: 60px; }
+  .pod { background: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 10px 14px; display: flex; align-items: center; gap: 8px; animation: podIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1); transition: all 0.3s; }
+  .pod.new { border-color: #3fb950; box-shadow: 0 0 12px #3fb95044; }
+  .pod .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .pod .dot.running { background: #3fb950; box-shadow: 0 0 6px #3fb95088; animation: pulse 2s infinite; }
+  .pod .dot.pending { background: #d29922; box-shadow: 0 0 6px #d2992288; animation: pulse 1s infinite; }
+  .pod .dot.creating { background: #58a6ff; box-shadow: 0 0 6px #58a6ff88; animation: pulse 0.8s infinite; }
+  .pod .dot.terminating { background: #f85149; box-shadow: 0 0 6px #f8514988; opacity: 0.5; }
+  .pod .name { font-size: 12px; font-family: 'SF Mono', 'Fira Code', monospace; color: #58a6ff; }
+  .pod .status-text { font-size: 10px; color: #8b949e; }
+  .pod .count { font-size: 11px; color: #8b949e; margin-left: auto; }
+  .pod.terminating { opacity: 0.4; transform: scale(0.95); border-color: #f85149; }
+  @keyframes podIn { from { opacity: 0; transform: translateY(-16px) scale(0.7); } to { opacity: 1; transform: translateY(0) scale(1); } }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+  /* Stats */
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .stat { text-align: center; padding: 8px 0; }
+  .stat-value { font-size: 32px; font-weight: 700; font-family: 'SF Mono', monospace; }
+  .stat-label { font-size: 11px; color: #8b949e; margin-top: 4px; text-transform: uppercase; }
+  .stat.success .stat-value { color: #3fb950; }
+  .stat.error .stat-value { color: #f85149; }
+  .stat.time .stat-value { color: #d2a8ff; }
+  .stat.rate .stat-value { font-size: 48px; }
+  .stats-row2 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 12px; border-top: 1px solid #21262d; padding-top: 12px; }
+
+  /* Flow */
+  #flow { display: flex; flex-wrap: wrap; gap: 3px; min-height: 44px; max-height: 130px; overflow: hidden; }
+  .req { width: 8px; height: 8px; border-radius: 2px; animation: reqIn 0.15s ease-out; flex-shrink: 0; }
+  .req.ok { background: #3fb950; }
+  .req.err { background: #f85149; }
+  .req.slow { background: #d29922; }
+  @keyframes reqIn { from { opacity: 0; transform: scale(0); } to { opacity: 1; transform: scale(1); } }
+
+  /* Chart */
+  canvas { width: 100%; height: 160px; display: block; }
+  .empty-state { color: #484f58; font-size: 13px; font-style: italic; padding: 20px 0; text-align: center; }
+  .k8s-status { font-size: 11px; padding: 3px 8px; border-radius: 4px; margin-left: 8px; }
+  .k8s-status.connected { background: #23863622; color: #3fb950; }
+  .k8s-status.disconnected { background: #da363322; color: #f85149; }
+</style>
+</head>
+<body>
+
+<h1>⚡ Load Test Dashboard</h1>
+
+<div class="controls">
+  <input type="text" id="url" value="http://localhost:8080" placeholder="Service URL (/work endpoint)">
+  <label>Concurrency: <input type="range" id="concurrency" min="1" max="100" value="30" oninput="document.getElementById('cVal').textContent=this.value"> <span class="val" id="cVal">30</span></label>
+  <label>Timeout: <input type="range" id="timeout" min="1" max="10" value="3" oninput="document.getElementById('tVal').textContent=this.value+'s'"> <span class="val" id="tVal">3s</span></label>
+  <button id="startBtn" class="stopped" onclick="toggle()">▶ START</button>
+  <button id="resetBtn" onclick="resetAll()">↺ RESET</button>
+</div>
+<div class="hint">
+  K8s pods: run <code>kubectl proxy --port=8001</code> then <code>python3 server.py</code>
+  <label style="margin-top:6px;display:flex;align-items:center;gap:8px;">
+    Label: <input type="text" id="k8sLabel" value="app=demo-app" placeholder="app=demo-app" style="width:140px;background:#0d1117;border:1px solid #30363d;color:#c9d1d9;padding:4px 8px;border-radius:4px;font-size:12px;">
+    <span class="k8s-status disconnected" id="k8sStatus">disconnected</span>
+  </label>
+</div>
+
+<div class="grid">
+  <div class="panel">
+    <h2>Active Pods <span class="badge" id="podCount">0</span></h2>
+    <div id="pods"><div class="empty-state">Connecting to K8s API...</div></div>
+  </div>
+  <div class="panel">
+    <h2>Stats</h2>
+    <div class="stats">
+      <div class="stat"><div class="stat-value" id="s_total">0</div><div class="stat-label">Total</div></div>
+      <div class="stat success"><div class="stat-value" id="s_ok">0</div><div class="stat-label">Success</div></div>
+      <div class="stat error"><div class="stat-value" id="s_err">0</div><div class="stat-label">Errors</div></div>
+    </div>
+    <div class="stats-row2">
+      <div class="stat time"><div class="stat-value" id="s_avg">—</div><div class="stat-label">Avg Time</div></div>
+      <div class="stat rate"><div class="stat-value" id="s_rate">—</div><div class="stat-label">Success %</div></div>
+      <div class="stat"><div class="stat-value" id="s_rps">—</div><div class="stat-label">Req/sec</div></div>
+    </div>
+    <div class="stats-row2">
+      <div class="stat error"><div class="stat-value" id="s_503">0</div><div class="stat-label">503 Overloaded</div></div>
+      <div class="stat"><div class="stat-value" id="s_timeout" style="color:#d29922">0</div><div class="stat-label">Timeouts</div></div>
+      <div class="stat"><div class="stat-value" id="s_netfail" style="color:#f47067">0</div><div class="stat-label">Net Errors</div></div>
+    </div>
+  </div>
+</div>
+
+<div class="grid">
+  <div class="panel full">
+    <h2>Live Request Flow</h2>
+    <div id="flow"><div class="empty-state">Press START to begin load testing</div></div>
+  </div>
+</div>
+
+<div class="grid">
+  <div class="panel full">
+    <h2>Response Time (ms) &amp; Error Rate</h2>
+    <canvas id="chart"></canvas>
+  </div>
+</div>
+
+<script>
+let running = false;
+let total = 0, ok = 0, errors = 0, times = [];
+let err503 = 0, errTimeout = 0, errNet = 0;
+let podRequests = {}; // podName -> request count (from responses)
+let k8sPods = [];     // from K8s API
+let chartData = [];
+let chartStart = 0;
+let rpsHistory = [];
+let k8sConnected = false;
+
+// ==================== K8s API Pod Polling ====================
+async function pollK8sPods() {
+  const label = document.getElementById('k8sLabel').value;
+  if (!label) {
+    k8sConnected = false;
+    updateK8sStatus();
+    return;
+  }
+  try {
+    const res = await fetch(`/api/v1/namespaces/default/pods?labelSelector=${encodeURIComponent(label)}`, { cache: 'no-store' });
+    if (!res.ok) throw new Error('API error');
+    const data = await res.json();
+    k8sConnected = true;
+    k8sPods = data.items.map(pod => ({
+      name: pod.metadata.name,
+      phase: pod.status.phase, // Pending, Running, Succeeded, Failed
+      ready: pod.status.containerStatuses
+        ? pod.status.containerStatuses.every(c => c.ready)
+        : false,
+      status: getPodDisplayStatus(pod),
+      deletionTimestamp: pod.metadata.deletionTimestamp || null,
+    }));
+    renderK8sPods();
+  } catch (e) {
+    k8sConnected = false;
+  }
+  updateK8sStatus();
+}
+
+function getPodDisplayStatus(pod) {
+  if (pod.metadata.deletionTimestamp) return 'Terminating';
+  const cs = pod.status.containerStatuses;
+  if (!cs || cs.length === 0) {
+    if (pod.status.phase === 'Pending') return 'Pending';
+    return pod.status.phase;
+  }
+  const c = cs[0];
+  if (c.state.waiting) return c.state.waiting.reason || 'Waiting';
+  if (c.state.running && c.ready) return 'Running';
+  if (c.state.running && !c.ready) return 'Starting';
+  if (c.state.terminated) return 'Terminated';
+  return pod.status.phase;
+}
+
+function updateK8sStatus() {
+  const el = document.getElementById('k8sStatus');
+  if (k8sConnected) {
+    el.className = 'k8s-status connected';
+    el.textContent = 'connected';
+  } else {
+    el.className = 'k8s-status disconnected';
+    el.textContent = 'disconnected';
+  }
+}
+
+function renderK8sPods() {
+  const container = document.getElementById('pods');
+  const currentNames = new Set(k8sPods.map(p => p.name));
+  const renderedNames = new Set([...container.querySelectorAll('.pod')].map(el => el.dataset.name));
+
+  // Add new pods
+  for (const pod of k8sPods) {
+    if (!renderedNames.has(pod.name)) {
+      const el = document.createElement('div');
+      el.className = 'pod new';
+      el.dataset.name = pod.name;
+      const short = pod.name.length > 24 ? '...' + pod.name.slice(-18) : pod.name;
+      el.innerHTML = `<div class="dot running"></div><span class="name">${short}</span><span class="status-text">${pod.status}</span><span class="count"></span>`;
+      container.appendChild(el);
+      setTimeout(() => el.classList.remove('new'), 3000);
+    }
+  }
+
+  // Update existing / mark terminating
+  container.querySelectorAll('.pod').forEach(el => {
+    const name = el.dataset.name;
+    const pod = k8sPods.find(p => p.name === name);
+    if (!pod || !currentNames.has(name)) {
+      // Pod gone — remove with fade
+      el.classList.add('terminating');
+      setTimeout(() => el.remove(), 2000);
+      return;
+    }
+    // Update status dot
+    const dot = el.querySelector('.dot');
+    dot.className = 'dot';
+    if (pod.status === 'Running') dot.classList.add('running');
+    else if (pod.status === 'Pending') dot.classList.add('pending');
+    else if (pod.status === 'ContainerCreating' || pod.status === 'Starting') dot.classList.add('creating');
+    else if (pod.status === 'Terminating') dot.classList.add('terminating');
+    else dot.classList.add('running');
+    // Update status text
+    el.querySelector('.status-text').textContent = pod.status;
+    // Update request count
+    const cnt = podRequests[name] || 0;
+    el.querySelector('.count').textContent = cnt > 0 ? `(${cnt.toLocaleString()})` : '';
+    // Update terminating class
+    if (pod.status === 'Terminating') el.classList.add('terminating');
+    else el.classList.remove('terminating');
+  });
+
+  // Remove empty state
+  const empty = container.querySelector('.empty-state');
+  if (empty && k8sPods.length > 0) empty.remove();
+
+  // Update badge
+  const runningCount = k8sPods.filter(p => p.status === 'Running').length;
+  const totalCount = k8sPods.length;
+  document.getElementById('podCount').textContent = runningCount === totalCount
+    ? `${totalCount}`
+    : `${runningCount}/${totalCount}`;
+}
+
+// Poll every 2 seconds
+setInterval(pollK8sPods, 2000);
+pollK8sPods(); // initial
+
+// ==================== Load Testing ====================
+function toggle() { if (running) stop(); else start(); }
+
+function resetAll() {
+  stop();
+  total = 0; ok = 0; errors = 0; times = [];
+  err503 = 0; errTimeout = 0; errNet = 0;
+  podRequests = {}; chartData = []; rpsHistory = [];
+  document.getElementById('s_total').textContent = '0';
+  document.getElementById('s_ok').textContent = '0';
+  document.getElementById('s_err').textContent = '0';
+  document.getElementById('s_503').textContent = '0';
+  document.getElementById('s_timeout').textContent = '0';
+  document.getElementById('s_netfail').textContent = '0';
+  document.getElementById('s_avg').textContent = '—';
+  document.getElementById('s_rate').textContent = '—';
+  document.getElementById('s_rps').textContent = '—';
+  document.getElementById('flow').innerHTML = '<div class="empty-state">Press START to begin load testing</div>';
+  clearChart();
+}
+
+function start() {
+  running = true;
+  total = 0; ok = 0; errors = 0; times = [];
+  err503 = 0; errTimeout = 0; errNet = 0;
+  podRequests = {}; chartData = []; rpsHistory = []; chartStart = Date.now();
+  document.getElementById('s_total').textContent = '0';
+  document.getElementById('s_ok').textContent = '0';
+  document.getElementById('s_err').textContent = '0';
+  document.getElementById('s_503').textContent = '0';
+  document.getElementById('s_timeout').textContent = '0';
+  document.getElementById('s_netfail').textContent = '0';
+  document.getElementById('s_avg').textContent = '—';
+  document.getElementById('s_rate').textContent = '—';
+  document.getElementById('s_rps').textContent = '—';
+  document.getElementById('flow').innerHTML = '';
+  clearChart();
+  const btn = document.getElementById('startBtn');
+  btn.className = 'running'; btn.textContent = '⏹ STOP';
+  sendBatch();
+}
+
+function stop() {
+  running = false;
+  const btn = document.getElementById('startBtn');
+  btn.className = 'stopped'; btn.textContent = '▶ START';
+}
+
+async function sendBatch() {
+  if (!running) return;
+  const url = document.getElementById('url').value.replace(/\/$/, '') + '/work';
+  const c = parseInt(document.getElementById('concurrency').value);
+  const t = parseInt(document.getElementById('timeout').value) * 1000;
+  const promises = [];
+  for (let i = 0; i < c; i++) promises.push(sendOne(url, t));
+  await Promise.all(promises);
+  if (running) requestAnimationFrame(() => setTimeout(sendBatch, 50));
+}
+
+async function sendOne(url, timeout) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout);
+  const start = performance.now();
+  try {
+    const res = await fetch(url + '?r=' + Math.random(), { signal: controller.signal, cache: 'no-store' });
+    clearTimeout(timer);
+    const elapsed = Math.round(performance.now() - start);
+    if (res.ok) {
+      const data = await res.json();
+      record(true, elapsed, data.pod, null);
+    } else {
+      let podName = null;
+      try { const d = await res.json(); podName = d.pod; } catch(_){}
+      record(false, elapsed, podName, res.status === 503 ? '503' : 'http');
+    }
+  } catch (e) {
+    clearTimeout(timer);
+    const elapsed = Math.round(performance.now() - start);
+    record(false, elapsed, null, e.name === 'AbortError' ? 'timeout' : 'network');
+  }
+}
+
+function record(success, timeMs, podName, errType) {
+  total++;
+  const now = Date.now();
+  rpsHistory.push(now);
+  if (success) { ok++; times.push(timeMs); }
+  else {
+    errors++;
+    if (errType === '503') err503++;
+    else if (errType === 'timeout') errTimeout++;
+    else errNet++;
+  }
+
+  // Track requests per pod (from responses)
+  if (podName) {
+    podRequests[podName] = (podRequests[podName] || 0) + 1;
+  }
+
+  // Stats
+  document.getElementById('s_total').textContent = total.toLocaleString();
+  document.getElementById('s_ok').textContent = ok.toLocaleString();
+  document.getElementById('s_err').textContent = errors.toLocaleString();
+  document.getElementById('s_503').textContent = err503.toLocaleString();
+  document.getElementById('s_timeout').textContent = errTimeout.toLocaleString();
+  document.getElementById('s_netfail').textContent = errNet.toLocaleString();
+  if (times.length > 0) {
+    const recent = times.slice(-200);
+    document.getElementById('s_avg').textContent = Math.round(recent.reduce((a,b)=>a+b,0)/recent.length) + 'ms';
+  }
+  const rate = total > 0 ? ((ok/total)*100).toFixed(1) : '—';
+  const rateEl = document.getElementById('s_rate');
+  rateEl.textContent = rate === '—' ? rate : rate + '%';
+  rateEl.style.color = rate >= 95 ? '#3fb950' : rate >= 80 ? '#d29922' : '#f85149';
+
+  // RPS
+  const oneSecAgo = now - 1000;
+  rpsHistory = rpsHistory.filter(t => t > oneSecAgo);
+  document.getElementById('s_rps').textContent = rpsHistory.length;
+
+  // Flow dot
+  const flow = document.getElementById('flow');
+  if (flow.querySelector('.empty-state')) flow.innerHTML = '';
+  const dot = document.createElement('div');
+  dot.className = 'req ' + (success ? (timeMs > 2000 ? 'slow' : 'ok') : 'err');
+  flow.appendChild(dot);
+  while (flow.children.length > 600) flow.removeChild(flow.firstChild);
+
+  // Chart (500ms buckets)
+  const bucket = Math.floor((now - chartStart) / 500);
+  if (!chartData[bucket]) chartData[bucket] = { times: [], errors: 0, ok: 0, pods: k8sPods.filter(p=>p.status==='Running').length || Object.keys(podRequests).length };
+  if (success) { chartData[bucket].times.push(timeMs); chartData[bucket].ok++; }
+  else { chartData[bucket].errors++; }
+  chartData[bucket].pods = k8sPods.filter(p=>p.status==='Running').length || Object.keys(podRequests).length;
+  drawChart();
+}
+
+// ==================== Chart ====================
+function clearChart() {
+  const canvas = document.getElementById('chart');
+  const ctx = canvas.getContext('2d');
+  canvas.width = canvas.offsetWidth * 2; canvas.height = 320;
+  ctx.scale(2,2);
+  ctx.fillStyle = '#0d1117'; ctx.fillRect(0,0,canvas.width,canvas.height);
+}
+
+function drawChart() {
+  const canvas = document.getElementById('chart');
+  const ctx = canvas.getContext('2d');
+  const w = canvas.offsetWidth, h = 160;
+  canvas.width = w*2; canvas.height = h*2;
+  ctx.scale(2,2);
+  ctx.fillStyle = '#0d1117'; ctx.fillRect(0,0,w,h);
+  if (chartData.length < 2) return;
+
+  let maxTime = 200, maxErr = 1;
+  for (const d of chartData) {
+    if (!d) continue;
+    if (d.times.length > 0) maxTime = Math.max(maxTime, d.times.reduce((a,b)=>a+b,0)/d.times.length);
+    maxErr = Math.max(maxErr, d.errors);
+  }
+  maxTime = Math.ceil(maxTime * 1.2 / 100) * 100;
+
+  const padL=50, padR=10, padT=10, padB=25;
+  const cw=w-padL-padR, ch=h-padT-padB;
+  const points = chartData.length;
+  const step = Math.max(cw / Math.max(points-1,1), 0.5);
+
+  // Grid
+  ctx.strokeStyle='#21262d'; ctx.lineWidth=0.5;
+  ctx.fillStyle='#484f58'; ctx.font='10px monospace'; ctx.textAlign='right';
+  for (let i=0;i<=4;i++) {
+    const y = padT + (ch/4)*i;
+    ctx.beginPath(); ctx.moveTo(padL,y); ctx.lineTo(w-padR,y); ctx.stroke();
+    ctx.fillText(Math.round(maxTime - (maxTime/4)*i)+'ms', padL-6, y+4);
+  }
+
+  // Error bars
+  for (let i=0;i<points;i++) {
+    const d = chartData[i];
+    if (!d || d.errors===0) continue;
+    const x = padL + i*step;
+    const barH = Math.max((d.errors/maxErr)*ch*0.4, 2);
+    ctx.fillStyle = '#f8514955';
+    ctx.fillRect(x-step/2, padT+ch-barH, Math.max(step-1,1), barH);
+  }
+
+  // Response time line
+  ctx.strokeStyle='#58a6ff'; ctx.lineWidth=2; ctx.beginPath();
+  let started = false;
+  for (let i=0;i<points;i++) {
+    const d = chartData[i];
+    if (!d || d.times.length===0) continue;
+    const avg = d.times.reduce((a,b)=>a+b,0)/d.times.length;
+    const x = padL + i*step;
+    const y = padT + ch - (avg/maxTime)*ch;
+    if (!started) { ctx.moveTo(x,y); started=true; } else ctx.lineTo(x,y);
+  }
+  ctx.stroke();
+
+  // Pod count line
+  let maxPods = 1;
+  for (const d of chartData) { if (d) maxPods = Math.max(maxPods, d.pods || 1); }
+  if (maxPods > 1) {
+    ctx.strokeStyle='#3fb95088'; ctx.lineWidth=1.5; ctx.setLineDash([4,4]); ctx.beginPath();
+    started = false;
+    for (let i=0;i<points;i++) {
+      const d = chartData[i]; if (!d) continue;
+      const x = padL + i*step;
+      const y = padT + ch - ((d.pods||1)/maxPods)*ch*0.8;
+      if (!started) { ctx.moveTo(x,y); started=true; } else ctx.lineTo(x,y);
+    }
+    ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle='#3fb950'; ctx.font='10px monospace'; ctx.textAlign='left';
+    ctx.fillText(maxPods+' pods', w-padR-40, padT+12);
+  }
+
+  // Legend
+  ctx.font='10px sans-serif'; ctx.textAlign='left';
+  ctx.fillStyle='#58a6ff'; ctx.fillText('— Response Time', padL, h-4);
+  ctx.fillStyle='#f8514966'; ctx.fillRect(padL+110,h-12,10,10);
+  ctx.fillStyle='#f85149'; ctx.fillText('Errors', padL+124, h-4);
+  if (maxPods > 1) { ctx.fillStyle='#3fb950'; ctx.fillText('- - Pods', padL+175, h-4); }
+}
+
+window.addEventListener('resize', () => { if (chartData.length>0) drawChart(); });
+clearChart();
+</script>
+</body>
+</html>
