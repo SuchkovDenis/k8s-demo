@@ -23,7 +23,6 @@ k8s-demo/
 - minikube v1.38.1
 - kubectl v1.35.1
 - Docker v27.4.0
-- hey (HTTP load testing)
 
 ## Быстрый старт
 
